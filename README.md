@@ -1,26 +1,26 @@
 # n8n Mastery — Complete Learning Guide
 
-A complete, lesson-by-lesson n8n course built for engineers who want to reach
-the top 1% of workflow automation practitioners.
-Each lesson includes concepts, mental models, hands-on exercises, and real
-production use cases.
+A complete, lesson-by-lesson n8n course built for **automation engineers with
+strong Python/JavaScript backgrounds** who want to reach the top 1% of
+workflow automation practitioners.
+Lessons assume technical fluency — analogies go deep, not wide.
 
 ---
 
-## Lessons
+## Progress
 
 | Lesson | Topic | Status |
 |--------|-------|--------|
 | [Lesson 01](lessons/01-the-problem-n8n-solves.md) | The Problem n8n Solves & Core Mental Model | ✅ Done |
 | [Lesson 02](lessons/02-installation-and-architecture.md) | Installation & n8n Architecture | ✅ Done |
 | [Lesson 03](lessons/03-your-first-workflow.md) | Your First Workflow | ✅ Done |
-| [Lesson 04](lessons/04-the-data-model.md) | The Data Model — Items, JSON & Pinning | ⏳ Upcoming |
-| [Lesson 05](lessons/05-expressions-and-dynamic-data.md) | Expressions & Dynamic Data | ⏳ Upcoming |
-| [Lesson 06](lessons/06-core-node-types.md) | Core Node Types Deep Dive | ⏳ Upcoming |
-| [Lesson 07](lessons/07-http-request-node.md) | HTTP Request — The Universal API Connector | ⏳ Upcoming |
-| [Lesson 08](lessons/08-working-with-data.md) | Working With Data — Set, Merge, Split, Filter | ⏳ Upcoming |
-| [Lesson 09](lessons/09-credentials-and-auth.md) | Credentials & Authentication Patterns | ⏳ Upcoming |
-| [Lesson 10](lessons/10-code-node.md) | The Code Node — JavaScript & Python Power | ⏳ Upcoming |
+| [Lesson 04](lessons/04-the-data-model.md) | The Data Model — Items, JSON & Pinning | ✅ Done |
+| [Lesson 05](lessons/05-expressions-and-dynamic-data.md) | Expressions & Dynamic Data | ✅ Done |
+| [Lesson 06](lessons/06-core-node-types.md) | Core Node Types Deep Dive | ✅ Done |
+| [Lesson 07](lessons/07-http-request-node.md) | HTTP Request — The Universal API Connector | ✅ Done |
+| [Lesson 08](lessons/08-working-with-data.md) | Working With Data — Set, Merge, Split, Filter | ✅ Done |
+| [Lesson 09](lessons/09-credentials-and-auth.md) | Credentials & Authentication Patterns | ✅ Done |
+| [Lesson 10](lessons/10-code-node.md) | The Code Node — JavaScript & Python Power | 🔄 In Progress |
 | [Lesson 11](lessons/11-error-handling.md) | Error Handling & Resilient Workflows | ⏳ Upcoming |
 | [Lesson 12](lessons/12-webhooks.md) | Webhooks — Receiving Events from the World | ⏳ Upcoming |
 | [Lesson 13](lessons/13-sub-workflows.md) | Sub-Workflows & Modular Design | ⏳ Upcoming |
@@ -50,21 +50,36 @@ production use cases.
 
 ---
 
+## Who This Course Is For
+
+Built for **Dharnish** — automation test engineer with strong Python and
+JavaScript. Lessons skip "what is an API" basics and go straight to
+engineering depth:
+
+- How n8n works internally (not just how to click)
+- When to use each node vs writing code
+- Production patterns: error handling, retries, idempotency, observability
+- Real integrations with real APIs — not toy examples
+
+---
+
 ## How This Course Works
 
 - **Lessons build on each other** — do them in order
 - **Every lesson has hands-on exercises** — run them in your n8n instance
-- **Concepts are explained with engineering analogies** — not marketing language
-- **Real production workflows** are used throughout, not toy examples
-- **You will understand how n8n works internally**, not just how to click buttons
+- **Technical depth** — since you know Python/JS, lessons go into internals,
+  not just surface-level "drag this node here"
+- **Real production workflows** used throughout, not toy examples
+- **Quick checks after each lesson** — test your understanding before moving on
 
 ---
 
 ## Prerequisites
 
-- Basic understanding of APIs (HTTP, JSON, REST)
-- Comfort reading JavaScript
-- Docker installed (for running n8n locally)
+- Strong Python and JavaScript knowledge ✅
+- Understanding of APIs, HTTP, JSON, REST ✅
+- n8n installed locally (`npm install -g n8n`)
+- Start command: `GENERIC_TIMEZONE=Asia/Kolkata N8N_SECURE_COOKIE=false n8n start`
 
 ---
 
@@ -77,4 +92,5 @@ it, what nodes to reach for, and how to make it production-grade.
 The difference between a casual n8n user and a top 1% practitioner:
 - Casual: knows what nodes exist
 - Top 1%: understands the **data model**, can debug any failure, writes clean
-  modular workflows, handles errors gracefully, and can automate anything
+  modular workflows, handles errors gracefully, applies software engineering
+  principles (single responsibility, DRY, observability) to automation
