@@ -242,8 +242,10 @@ N8N_HOST=0.0.0.0
 N8N_PORT=5678
 WEBHOOK_URL=https://your-domain.com/
 
-# Timezone
-GENERIC_TIMEZONE=America/New_York
+# Timezone (use your local timezone)
+GENERIC_TIMEZONE=America/New_York   # US East
+GENERIC_TIMEZONE=Asia/Kolkata       # India (IST, UTC+05:30)
+GENERIC_TIMEZONE=Europe/London      # UK
 
 # Execution data retention (default: save all)
 EXECUTIONS_DATA_PRUNE=true
@@ -298,6 +300,78 @@ does something, puts items out. Nothing more.
 
 You haven't built anything yet, but you've run your first workflow and seen
 where execution history lives. That's the foundation.
+
+---
+
+## Common Setup Issues & Fixes
+
+### Issue 1 — Secure Cookie Error on localhost
+
+**Error message:**
+```
+Your n8n server is configured to use a secure cookie, however you are either
+visiting this via an insecure URL, or using Safari.
+```
+
+**Why it happens:** n8n's secure cookie requires HTTPS. Local dev runs on plain
+HTTP, so the browser rejects the cookie. This also happens in Safari even on localhost.
+
+**Fix — stop n8n, restart with the env variable:**
+```bash
+pkill -f n8n
+GENERIC_TIMEZONE=Asia/Kolkata N8N_SECURE_COOKIE=false n8n start
+```
+
+Then open `http://localhost:5678` — the error will be gone.
+
+This is safe for local development. In production (with HTTPS), the warning
+disappears automatically and you don't need this flag.
+
+---
+
+### Issue 2 — Forgot Login Password
+
+**Fix — reset the owner account without deleting your data:**
+```bash
+pkill -f n8n
+n8n user-management:reset
+N8N_SECURE_COOKIE=false n8n start
+```
+
+Open `http://localhost:5678` — the setup wizard appears again so you can set
+a new email and password. **Your workflows, credentials, and execution history
+are not deleted.** Only the login is reset.
+
+---
+
+### Issue 3 — Port 5678 Already in Use
+
+```bash
+# Find what's using the port
+lsof -i :5678
+
+# Kill it
+pkill -f n8n
+
+# Or start n8n on a different port
+N8N_PORT=5679 N8N_SECURE_COOKIE=false n8n start
+# Open: http://localhost:5679
+```
+
+---
+
+### Issue 4 — n8n Command Not Found After Install
+
+```bash
+# Fix npm permissions first
+sudo chown -R $(whoami) ~/.npm
+
+# Reinstall
+npm install -g n8n
+
+# Verify
+n8n --version
+```
 
 ---
 

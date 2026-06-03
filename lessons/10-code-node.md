@@ -254,6 +254,18 @@ return lines.slice(1).map(line => {
 
 ## Python in the Code Node
 
+> ⚠️ **Common Error:** `Python runner unavailable: Virtual environment is missing`
+>
+> This means n8n can't find a Python venv on your system.
+> **Easiest fix:** switch the Code node language to **JavaScript** — same power, zero setup.
+>
+> If you specifically need Python, create the venv:
+> ```bash
+> cd ~/.npm-global/lib/node_modules/n8n
+> python3 -m venv .venv
+> ```
+> Then restart n8n. All course lessons use JavaScript — Python is optional.
+
 Switch language to Python. Note: fewer built-ins than JavaScript.
 
 ```python
