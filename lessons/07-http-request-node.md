@@ -397,6 +397,56 @@ Step 2: HTTP Request → set Header: Authorization = Bearer {{ $('Login').item.j
 
 ---
 
+## Check Your Understanding — Q&A
+
+### Q1. What is the difference between a 401 and a 403 HTTP response? How do you handle each?
+
+**Answer:** `401 Unauthorized` — your credentials are missing or invalid. Fix: check your API key/token in the credential. `403 Forbidden` — credentials are valid but your account doesn't have permission to do this action. Fix: check API scopes, roles, or plan limits — re-authenticating won't help. Retrying either is pointless.
+
+---
+
+### Q2. You call an API that returns results across 47 pages of 100 items each. What do you configure in n8n to get all 4,700 items automatically?
+
+**Answer:** Enable **Pagination** in the HTTP Request node (Add Option → Pagination). Configure the pagination type to match the API (cursor-based, offset-based, or page-based). Set the stop condition (e.g. `{{ !$response.body.next_cursor }}`). n8n will keep calling the API, advancing the page/cursor, until the stop condition is true — all pages collected into one stream of items.
+
+---
+
+### Q3. You have 200 items flowing into an HTTP Request node that calls a rate-limited API (10 req/min). The node fires all 200 calls at once and you get 429 errors. What is the correct fix?
+
+**Answer:** Two options:
+1. **Per-node batching:** In the HTTP Request node → Add Option → Batching → set Batch Size: 10, Batch Interval: 6000ms (6 seconds). This fires 10 requests, waits 6s, fires next 10.
+2. **SplitInBatches loop:** SplitInBatches (10) → HTTP Request → Wait (6s) → back to SplitInBatches. More control — lets you add error handling per batch.
+
+Option 2 is preferred for production because you can add retry and logging between batches.
+
+---
+
+### Q4. When should you enable "Full Response" on the HTTP Request node?
+
+**Answer:** When you need anything beyond the raw response body: (1) checking the HTTP status code to detect 4xx/5xx errors explicitly, (2) reading response headers (rate limit remaining, pagination cursors, Location header after a 201 Created), (3) debugging — seeing exactly what the server returned. Without Full Response, n8n only gives you the parsed body and throws on non-2xx. With it, you get `{ statusCode, headers, body }` and can handle any status code yourself.
+
+---
+
+### Q5. How do you call an API that requires a fresh auth token obtained from a login endpoint?
+
+**Answer:**
+```
+Step 1: HTTP Request → POST /auth/login { username, password }
+        → response: { token: "eyJ..." }
+
+Step 2: HTTP Request → GET /protected/data
+        → Header: Authorization = Bearer {{ $('Login Step').item.json.token }}
+```
+Reference the token from the login node using `$('node name').item.json.token`. For workflows that run repeatedly, store the token in `$vars` or re-fetch it on each run if it's short-lived.
+
+---
+
+### Q6. What is the difference between "Ignore SSL Issues" and a proper SSL fix? When is it acceptable?
+
+**Answer:** "Ignore SSL Issues" skips certificate validation — the connection is still encrypted but you won't detect a man-in-the-middle attack or expired cert. Acceptable only for internal services on a trusted private network (e.g. a local test server with a self-signed cert). Never use it for external production APIs — if the cert is invalid on a public API, that's a red flag, not an inconvenience to suppress.
+
+---
+
 ## Next Lesson
 
 **[Lesson 08 →](08-working-with-data.md)** — Set, Merge, Aggregate, Split Out,

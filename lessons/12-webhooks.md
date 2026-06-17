@@ -307,6 +307,52 @@ configure your n8n with `WEBHOOK_URL=https://your-ngrok-url.io`.
 
 ---
 
+## Check Your Understanding — Q&A
+
+### Q1. A webhook fires and your workflow takes 45 seconds to process. The external service times out at 10 seconds and retries. What happens and how do you fix it?
+
+**Answer:** The service retries — you receive the same event 2–3 times. Without idempotency, you process it multiple times. Fix: add a `Respond to Webhook` node immediately after the Webhook trigger (before any slow processing) — respond `200 OK` in milliseconds. The rest of the workflow continues executing after the response is sent. Combine with idempotency (check event ID before processing) to handle any retries that already arrived before your fix.
+
+---
+
+### Q2. What is HMAC-SHA256 signature validation and why does it matter for webhooks?
+
+**Answer:** HMAC-SHA256 is a keyed hash — the service computes `HMAC(secret, payload)` and sends it as a header. You recompute the same hash with your copy of the secret and compare. If they match, the request came from the real service. If they don't, it's a spoofed request — someone who knows your webhook URL is sending fake events (e.g. fake "payment.succeeded" to trigger order fulfilment without paying). Without validation, your webhook URL is an unauthenticated endpoint that anyone can abuse.
+
+---
+
+### Q3. What is the difference between the Test URL and Production URL in n8n webhooks? What breaks if you use the Test URL in production?
+
+**Answer:** Test URL only responds when you have the workflow open in the editor and clicked "Listen for test event" — it's a blocking listener. In production (background execution), the Test URL is not listening and the external service gets a connection refused or timeout. Always register the Production URL with external services, and only use the Test URL for one-off event captures during development.
+
+---
+
+### Q4. You receive a GitHub webhook for every event (push, PR, issue, release). Your workflow only handles PR merges. How do you filter out everything else efficiently?
+
+**Answer:** Check `$json.headers['x-github-event']` and `$json.body.action` + `$json.body.pull_request.merged` in a Code node or IF node right after the Webhook trigger. Respond `200 OK` immediately for non-matching events (so GitHub doesn't retry) and stop processing:
+```javascript
+const event = $json.headers['x-github-event'];
+const action = $json.body.action;
+const merged = $json.body.pull_request?.merged;
+if (event !== 'pull_request' || action !== 'closed' || !merged) {
+  return { skip: true };
+}
+```
+Then IF `$json.skip === true` → Respond 200, done. Filter early — don't let irrelevant events flow through your entire workflow.
+
+---
+
+### Q5. How do you test webhooks locally when n8n is running on localhost and GitHub/Stripe can't reach it?
+
+**Answer:** Use **ngrok** to create a public HTTPS tunnel to your local n8n:
+```bash
+ngrok http 5678
+# Output: https://abc123.ngrok.io → http://localhost:5678
+```
+Register `https://abc123.ngrok.io/webhook/<id>` with the external service. Free tier URL changes on every restart — set `WEBHOOK_URL=https://abc123.ngrok.io` in n8n so the Production URL in the editor reflects the correct public URL. For stable development URLs, use ngrok's fixed domain (paid) or deploy n8n to a cloud VM.
+
+---
+
 ## Next Lesson
 
 **[Lesson 13 →](13-sub-workflows.md)** — Sub-workflows and modular design:

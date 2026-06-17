@@ -313,6 +313,60 @@ return { debug: true };  // placeholder while testing
 
 ---
 
+## Check Your Understanding — Q&A
+
+### Q1. You're in Per Item mode and you return an array of 3 objects from one input item. How many output items do you get?
+
+**Answer:** 3 output items — one per object in the returned array. Per Item mode treats a returned array as "split this item into multiple." This is how you expand one item into N items inside a Code node, without using a Split Out node.
+
+---
+
+### Q2. What is wrong with this All Items mode code?
+
+```javascript
+const items = $input.all();
+return items.map(i => ({ name: i.json.name }));
+```
+
+**Answer:** The return format is wrong. All Items mode requires `{ json: {...} }` wrappers. The correct version:
+```javascript
+const items = $input.all();
+return items.map(i => ({ json: { name: i.json.name } }));
+```
+Without the `json` wrapper, n8n throws a runtime error or produces unexpected output.
+
+---
+
+### Q3. You need to deduplicate 1,000 items by email, then enrich each unique email via an API. Where does the Code node fit and which mode?
+
+**Answer:** Code node in **Run Once for All Items** mode — placed before the HTTP Request node. It receives all 1,000 items, deduplicates using a `Set`, returns only unique items. The HTTP Request then fires once per unique item. Per Item mode can't deduplicate because it processes items independently — it has no view of other items.
+
+```javascript
+const items = $input.all();
+const seen = new Set();
+return items
+  .filter(i => {
+    if (seen.has(i.json.email)) return false;
+    seen.add(i.json.email);
+    return true;
+  });
+// Note: no { json: wrap } needed when returning existing item objects
+```
+
+---
+
+### Q4. What variables are available in the Code node that are NOT available in a Set node expression?
+
+**Answer:** `$input.all()` (access all items at once), `require()` for Node.js built-ins like `crypto`, multi-line logic with intermediate variables, loops (`for`, `map`, `reduce`), and `console.log()` for debugging. Set node expressions are single-line — no loops, no intermediate state, no `require`.
+
+---
+
+### Q5. When should you NOT use a Code node even though you technically could?
+
+**Answer:** When a dedicated node already does it: field picking → Set node, branching → IF/Switch, deduplication → Remove Duplicates node, sorting → Sort node, simple HTTP call → HTTP Request node. Code nodes are harder to read at a glance, don't show visual config in the panel, and require reading JS to understand. Use them only when no built-in node covers the logic. Three similar transform lines in a Set node is better than a Code node with a three-line map.
+
+---
+
 ## Next Lesson
 
 **[Lesson 11 →](11-error-handling.md)** — Error handling, retry patterns, Error

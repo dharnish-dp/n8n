@@ -313,6 +313,49 @@ This exercises: HTTP Request, Split Out, IF, Set, Merge, Aggregate, Code.
 
 ---
 
+## Check Your Understanding — Q&A
+
+### Q1. You have 3 items flowing into a Gmail node. How many emails are sent? What if you want only 1 summary email?
+
+**Answer:** 3 emails — action nodes execute once per item. For 1 summary email:
+Aggregate node first (collapse 3 items into 1) → Code node (format all 3 into one message body) → Gmail node (sends 1 email). Without Aggregate, Gmail fires per item.
+
+---
+
+### Q2. What is the difference between an IF node and a Filter node?
+
+**Answer:** IF routes items to two branches — True and False — so you can handle both cases. Filter silently drops non-matching items; there is no "false branch." Use Filter when non-matches should be discarded. Use IF when non-matches need to do something (log, alert, take alternate action).
+
+---
+
+### Q3. You have 5,000 items and an API that allows 10 requests per second. What pattern do you use and how do you configure it?
+
+**Answer:** SplitInBatches (batch size 10) → HTTP Request → Wait (1 second) → loop back to SplitInBatches. This processes 10 items, waits 1 second, then processes the next 10 — giving exactly 10 req/s. Never pass all 5,000 items directly to the HTTP Request node — it fires all 5,000 calls immediately and gets rate-limited or banned.
+
+---
+
+### Q4. Explain all 4 Merge modes and give a real use case for each.
+
+**Answer:**
+- **Append** — stack items from both inputs. Use when reconnecting IF branches back into one stream.
+- **Combine by Field** — SQL JOIN on a matching field. Use when you called two APIs (e.g. user profile + user score) and want one enriched item per user.
+- **Combine by Position** — merge item 1 from A with item 1 from B. Use when items are positionally aligned and have no shared ID.
+- **Choose Branch** — wait for both inputs, pass only one branch's items. Use when running a parallel lookup and you only want the primary data going forward.
+
+---
+
+### Q5. When should you use a Switch node vs chaining multiple IF nodes?
+
+**Answer:** Switch node when routing on a single field's value to 3+ destinations — cleaner, single place to change routing logic. Chained IF nodes when each branch has a completely different condition (not the same field). Chained IFs also let you pass items through multiple conditions sequentially — Switch is parallel, exclusive routing.
+
+---
+
+### Q6. What is the purpose of a Sticky Note node and why is it not optional in production?
+
+**Answer:** Sticky Notes add text documentation to the canvas — they don't process data. They're not optional because workflows without documentation are unmaintainable after 2 weeks. A future reader (or you at 3am during an incident) needs to know: what does this section do, what can fail here, why is this condition set this way. Treat them like code comments — explain the *why*, not the *what*.
+
+---
+
 ## Next Lesson
 
 **[Lesson 07 →](07-http-request-node.md)** — The HTTP Request node in exhaustive

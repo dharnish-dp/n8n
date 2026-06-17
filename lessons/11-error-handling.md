@@ -321,6 +321,56 @@ For every workflow you put into production:
 
 ---
 
+## Check Your Understanding — Q&A
+
+### Q1. What is the difference between Retry On Fail and Continue On Fail? When should you NOT use Retry?
+
+**Answer:** Retry On Fail re-executes the same node up to N times with a wait between each attempt — designed for transient failures (network blips, 503s, rate limits). Continue On Fail catches the error, outputs it as a data item, and lets the workflow continue. Never use Retry for deterministic failures — a 400 Bad Request means your request is malformed, retrying 3 times just wastes 3x the time and burns API rate limits. Use Retry only when the failure is likely temporary and the same request might succeed on the next attempt.
+
+---
+
+### Q2. Your Error Workflow fires. What is the first thing you should include in the Slack alert and why?
+
+**Answer:** The **execution ID** (`$json.execution.id`) and a direct link to the execution (`$json.execution.url`). Without these, you know something failed but you have to search through execution history to find which run, what data it had, and which node died. With the execution ID in the alert, one click takes you to the exact execution with full per-node input/output data. This is the difference between a 30-second debug and a 10-minute search.
+
+---
+
+### Q3. You process 500 items. Item 203 throws an error. With Continue On Fail ON, what does item 203's output look like and how do you detect it downstream?
+
+**Answer:** Item 203 outputs:
+```json
+{ "error": "Some error message", "statusCode": 500 }
+```
+Detect it with an IF node: `$json.error` exists (or `$json.error !== undefined`). Items 1–202 and 204–500 output their normal data. You can branch: True → log the error item, False → continue normal processing. This is per-item try/catch in n8n.
+
+---
+
+### Q4. What is the dead letter queue pattern and when do you need it vs just logging errors?
+
+**Answer:** Dead letter queue (DLQ) is for items that **must not be lost** — where "log and move on" is unacceptable. Implementation: failed items are persisted to a DB table with their original payload, error message, timestamp, and retry count. A separate scheduled workflow picks them up and retries. After N failures, they're marked as permanently failed and escalated. Use DLQ when: processing payments, sending critical notifications, syncing data that can't have gaps. Use simple error logging when: enrichment fails (skip it), non-critical alerts miss (acceptable loss).
+
+---
+
+### Q5. Your workflow runs 100 items. 3 fail. 97 succeed. How do you send a final summary that includes both the success count and the specific items that failed?
+
+**Answer:** Use the per-item try/catch pattern with two Set nodes (mark success/failed), Merge (Append) to bring both branches back together, Aggregate to collect all 100 results, then a Code node in All Items mode:
+```javascript
+const items = $input.all().map(i => i.json);
+const failed = items.filter(i => i.status === 'error');
+const succeeded = items.filter(i => i.status === 'success');
+return [{
+  json: {
+    total: items.length,
+    succeeded: succeeded.length,
+    failed: failed.length,
+    failedItems: failed.map(i => ({ id: i.id, error: i.error }))
+  }
+}];
+```
+Then one Slack message: "Processed 100 items: 97 success, 3 failed" with the failed item details.
+
+---
+
 ## Next Lesson
 
 **[Lesson 12 →](12-webhooks.md)** — Webhooks in depth: receiving events from

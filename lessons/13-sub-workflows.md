@@ -274,6 +274,46 @@ Parent checks: IF $json.success === false → handle error
 
 ---
 
+## Check Your Understanding — Q&A
+
+### Q1. What trigger node do you use to start a sub-workflow, and why can't you use a Webhook or Schedule trigger?
+
+**Answer:** `When Called By Another Workflow` trigger. Webhooks and Schedule triggers start workflows from external events or time — they can't receive items from a parent workflow or return results back to it. The `When Called By Another Workflow` trigger is the only one designed to receive items from an `Execute Workflow` node and return output that the parent can use. It's the function signature in n8n's architecture.
+
+---
+
+### Q2. You call a sub-workflow in "Run Once Per Item" mode with 50 items. How many sub-workflow executions are created? What is the performance implication?
+
+**Answer:** 50 executions — one per item. Each execution is a separate record in the database, a separate process spawn, and logged independently. For 50 items this is usually fine. For 5,000 items it floods your execution history and creates significant overhead. For large batches, use "Run Once (all items as batch)" mode — the sub-workflow receives all items at once and runs once. Use Per Item mode only when each item truly needs an independent execution context (e.g. different error handling, different credentials per item).
+
+---
+
+### Q3. How do you pass data back from a sub-workflow to the parent workflow?
+
+**Answer:** Whatever the sub-workflow's last node outputs becomes the `Execute Workflow` node's output in the parent. The sub-workflow's final items flow directly back. Best practice: end every sub-workflow with a Set node (Keep Only Set Fields: ON) that outputs exactly the fields the parent needs — don't return the entire accumulated item with all intermediate fields. This creates a clean interface contract between parent and sub-workflow, exactly like a function's return type.
+
+---
+
+### Q4. A sub-workflow throws an unhandled error. What happens in the parent workflow?
+
+**Answer:** The `Execute Workflow` node in the parent also throws — the error propagates up. The parent's error handling applies: if Retry On Fail is set on the Execute Workflow node, it retries the sub-workflow call. If Continue On Fail is on, the parent gets an error item and can handle it downstream. If neither is set, the parent workflow fails entirely and the parent's Error Workflow fires. Design sub-workflows to catch their own errors internally and return `{ success: false, error: "..." }` — this gives the parent structured error info instead of an exception.
+
+---
+
+### Q5. You have the same "send Slack alert" logic copied in 8 different workflows. What is the correct refactor and what are the exact steps?
+
+**Answer:**
+1. Create a new workflow named `send-slack-alert`
+2. Add `When Called By Another Workflow` as the trigger
+3. Move the Slack logic into it — expect `{ channel, title, message, severity }` as input
+4. End with a Set node returning `{ sent: true, timestamp: $now.toISO() }`
+5. In each of the 8 workflows, replace the Slack node with `Execute Workflow → send-slack-alert`
+6. Pass the required fields in the Execute Workflow node's input mapping
+
+Now all 8 workflows use one implementation. Change the Slack format once → all 8 updated. This is the DRY principle applied to automation architecture.
+
+---
+
 ## Next Lesson
 
 **[Lesson 14 →](14-real-project-slack-bot.md)** — Build a complete production

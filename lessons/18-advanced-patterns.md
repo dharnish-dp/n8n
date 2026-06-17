@@ -313,6 +313,46 @@ Always use credentials or $vars for sensitive values.
 
 ---
 
+## Check Your Understanding — Q&A
+
+### Q1. You have a workflow that processes incoming orders. Occasionally n8n crashes mid-run, leaving some orders partially processed. How do you design for crash recovery?
+
+**Answer:** Use the **state machine pattern** — persist each order's state to a DB table (`pending → processing → enriched → crm_created → done`). Each workflow step reads the current state, does its work, and writes the next state. On crash, the scheduler restarts and picks up from the last persisted state. Orders in `processing` state for more than 10 minutes are considered stuck — a separate health-check workflow resets them to `pending`. Without state persistence, you have to replay the entire run from scratch with no way to know what already succeeded.
+
+---
+
+### Q2. What is the "loop-until-dry" pattern and when do you use it over a fixed-count loop?
+
+**Answer:** Loop-until-dry keeps running finders until K consecutive rounds return zero new results. Use it when you don't know the total size of what you're searching for — e.g. finding all bugs in a codebase, discovering all edge cases for a feature, scraping paginated data where you don't know the page count. A fixed loop (`while count < 10`) stops too early or runs too long. Loop-until-dry terminates naturally when exhausted: `while (dry < 2) { find new items; if none new, dry++; else dry = 0; }`.
+
+---
+
+### Q3. How do you implement an approval workflow where a manager must approve an expense before payment is processed?
+
+**Answer:** Use the **Wait node in Webhook mode**:
+1. Workflow receives expense submission
+2. Send Slack to manager with two buttons (Approve/Reject) — buttons contain URLs
+3. Wait node pauses execution, generates a unique resume URL
+4. Slack buttons are built using the resume URL
+5. Manager clicks Approve → calls the resume URL → n8n continues
+6. Workflow checks the approval payload and processes or rejects
+
+The execution can be paused for hours or days. n8n stores the paused state in the DB. When the resume URL is called, execution picks up exactly where it stopped with the approval data available in `$json`.
+
+---
+
+### Q4. Your n8n instance has 50 workflows all calling the same external API. The API has a global rate limit of 100 req/min across all your workflows. How do you enforce this globally?
+
+**Answer:** Extract all API calls into a single sub-workflow (`call-external-api`) that includes rate limiting logic. All 50 workflows call this sub-workflow instead of the API directly. The sub-workflow uses a Redis-based or DB-based token bucket: check remaining quota, if available decrement and make the call, if not wait until quota resets. This centralises rate limit enforcement — 50 workflows sharing one rate limiter instead of each independently blasting the API. Alternatively, use n8n's Queue Mode with a single worker for that API to serialize all requests through one process.
+
+---
+
+### Q5. What is the difference between a workflow variable (`$vars`) and passing data as item fields between nodes? When do you use each?
+
+**Answer:** `$vars` is global, persists across executions, and is shared across all runs of a workflow. Item fields exist only within one execution and are scoped to the current item. Use `$vars` for configuration that doesn't change per run: API base URLs, environment names, feature flags, thresholds. Use item fields for data that belongs to the current execution: the API response, the computed value, the user ID being processed. Never use `$vars` to pass state between items in the same run — it creates race conditions if two executions run concurrently. Never use `$vars` for secrets — use credentials.
+
+---
+
 ## Summary
 
 You've reached the top 1%. The difference now is:

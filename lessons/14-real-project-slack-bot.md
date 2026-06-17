@@ -279,6 +279,49 @@ Then process each coin with the same HTTP Request node (one request per item).
 
 ---
 
+## Check Your Understanding — Q&A
+
+### Q1. The CoinGecko API returns a 429. Your workflow fails. How should you handle this at the node level?
+
+**Answer:** On the HTTP Request node: enable **Retry On Fail** (3 tries, wait 30,000ms between retries — 429 means rate limited, not a transient blip, so wait longer). Also check for a `Retry-After` header in the response using Full Response mode — use that value as the wait time if present. For a price monitoring workflow that fires every 5 minutes, a single 429 is usually fine to retry 2–3 times; if it keeps failing, the Error Workflow fires and alerts you.
+
+---
+
+### Q2. You want to add a cooldown so you don't send the same severity alert more than once every 30 minutes. How do you implement this in n8n?
+
+**Answer:** After computing severity, check `$vars.LAST_ALERT_TIME` and `$vars.LAST_ALERT_SEVERITY`. In a Code node:
+```javascript
+const lastAlert = $vars.LAST_ALERT_TIME;
+const lastSeverity = $vars.LAST_ALERT_SEVERITY;
+if (lastAlert && lastSeverity === $json.severity) {
+  const minutesSince = $now.diff(DateTime.fromISO(lastAlert), 'minutes').minutes;
+  if (minutesSince < 30) return { ...$json, suppress: true };
+}
+return { ...$json, suppress: false };
+```
+Then IF `suppress === true` → skip Slack → log only. Update `$vars` after sending the alert using the n8n Variables API or a Set Variables node.
+
+---
+
+### Q3. Your Airtable log is filling up with "ok" status records every 5 minutes. How do you reduce noise without losing the alert history?
+
+**Answer:** Two options: (1) Only log to Airtable when severity is `warning` or `critical` — add an IF node before Airtable and skip logging for `ok`. (2) Keep logging all but set `EXECUTIONS_DATA_PRUNE=true` and `EXECUTIONS_DATA_MAX_AGE=24` in n8n config so execution history auto-purges after 24h, while Airtable retains only the important events. Option 1 is cleaner — your audit log should contain signal, not noise.
+
+---
+
+### Q4. How would you extend this workflow to monitor 5 coins simultaneously instead of just Bitcoin?
+
+**Answer:** Replace the Schedule Trigger → single HTTP Request with:
+1. Schedule Trigger → Code node (return 5 items, one per coin with its threshold)
+2. HTTP Request node (runs once per item — 5 API calls, one per coin)
+3. Set node uses `$json.coin` to label each result
+4. Code node computes severity per coin using its own threshold
+5. Switch/Slack nodes use `$json.coin` in the message
+
+The key insight: make the coin list a data-driven configuration (Code node or DB table), not 5 hardcoded workflow branches. Adding a 6th coin means adding one row to the config, not rebuilding the workflow.
+
+---
+
 ## Next Lesson
 
 **[Lesson 15 →](15-real-project-lead-enrichment.md)** — Lead enrichment pipeline:
