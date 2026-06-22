@@ -18,7 +18,7 @@ A workflow without error handling is a liability:
 Production workflows must:
 1. **Detect** failures (which node, which item, what error)
 2. **Retry** transient failures (network blips, rate limits)
-3. **Route** unrecoverable failures somewhere useful (Slack alert, dead letter queue)
+3. **Route** unrecoverable failures somewhere useful (Telegram alert, dead letter queue)
 4. **Continue** processing remaining items when one item fails
 
 ---
@@ -88,7 +88,7 @@ Create an "Error Handler" workflow:
 [Error Trigger]
       │
       ▼
-[Slack → Send alert]
+[Telegram → Send alert]
 "❌ Workflow failed: {{ $json.workflow.name }}
 Error: {{ $json.execution.error.message }}
 Execution ID: {{ $json.execution.id }}
@@ -201,7 +201,7 @@ Create a separate "Retry Failed Items" workflow:
       ▼
 [IF: success?]
   True: update row to status="success"
-  False: increment retry_count, if >= 3 → status="permanent_failure" → Slack alert
+  False: increment retry_count, if >= 3 → status="permanent_failure" → Telegram alert
 ```
 
 ---
@@ -304,7 +304,7 @@ For every workflow you put into production:
 - [ ] Error Workflow assigned in workflow settings
 - [ ] Critical HTTP Requests have Retry On Fail (3 tries, 1s wait)
 - [ ] Batch processing uses Continue On Fail + error tracking
-- [ ] Error alerting sends to Slack/email with execution ID + link
+- [ ] Error alerting sends to Telegram/email with execution ID + link
 - [ ] 429 rate limits are handled with Wait + retry
 - [ ] Dead letter pattern for any items that must not be lost
 - [ ] Sticky Notes document what each section does and what can fail
@@ -329,7 +329,7 @@ For every workflow you put into production:
 
 ---
 
-### Q2. Your Error Workflow fires. What is the first thing you should include in the Slack alert and why?
+### Q2. Your Error Workflow fires. What is the first thing you should include in the Telegram alert and why?
 
 **Answer:** The **execution ID** (`$json.execution.id`) and a direct link to the execution (`$json.execution.url`). Without these, you know something failed but you have to search through execution history to find which run, what data it had, and which node died. With the execution ID in the alert, one click takes you to the exact execution with full per-node input/output data. This is the difference between a 30-second debug and a 10-minute search.
 
@@ -367,7 +367,7 @@ return [{
   }
 }];
 ```
-Then one Slack message: "Processed 100 items: 97 success, 3 failed" with the failed item details.
+Then one Telegram message: "Processed 100 items: 97 success, 3 failed" with the failed item details.
 
 ---
 

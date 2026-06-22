@@ -10,17 +10,17 @@ principle to automation architecture.
 ## Why Sub-Workflows Matter
 
 Without modularity, automation systems grow into spaghetti:
-- Every workflow reimplements the same Slack notification logic
-- When the Slack format changes, you update 12 workflows
+- Every workflow reimplements the same Telegram notification logic
+- When the Telegram format changes, you update 12 workflows
 - Debugging means reading the same 40-node workflow every time
 
 With sub-workflows:
 ```
-Parent Workflow A ──▶ [Execute: send-slack-alert]
-Parent Workflow B ──▶ [Execute: send-slack-alert]
-Parent Workflow C ──▶ [Execute: send-slack-alert]
+Parent Workflow A ──▶ [Execute: send-telegram-alert]
+Parent Workflow B ──▶ [Execute: send-telegram-alert]
+Parent Workflow C ──▶ [Execute: send-telegram-alert]
 
-Change format in send-slack-alert → all three updated instantly.
+Change format in send-telegram-alert → all three updated instantly.
 ```
 
 Sub-workflows are functions in your automation architecture.
@@ -84,14 +84,14 @@ Source of data: Database (recommended for production)
 
 ## Real Utility Sub-Workflows to Build
 
-### 1. send-slack-alert
+### 1. send-telegram-alert
 
-Centralizes all Slack alerts. Any workflow can call this.
+Centralizes all Telegram alerts. Any workflow can call this.
 
 ```
 Inputs expected:
   {
-    channel: "#alerts",
+    chatId: "123456789",
     title: "Something happened",
     message: "Details here",
     severity: "error" | "warning" | "info",
@@ -107,15 +107,16 @@ icon = $json.severity === 'error' ? '🔴' : $json.severity === 'warning' ? '�
 text = `${icon} *${$json.title}*\n${$json.message}\n_From: ${$json.workflowName}_`
         │
         ▼
-[Slack: Post Message]
-Channel: {{ $json.channel }}
+[Telegram: Send Message]
+Chat ID: {{ $json.chatId }}
 Text: {{ $json.text }}
+Parse Mode: Markdown
 ```
 
 Any parent workflow calls it with:
 ```
-Execute Workflow: "send-slack-alert"
-Pass: { channel: "#deploys", title: "Deploy started", message: "...", severity: "info", workflowName: $workflow.name }
+Execute Workflow: "send-telegram-alert"
+Pass: { chatId: "123456789", title: "Deploy started", message: "...", severity: "info", workflowName: $workflow.name }
 ```
 
 ### 2. enrich-contact
@@ -218,7 +219,7 @@ Each workflow should do one thing:
 | `stripe-new-customer` | Triggered on Stripe event |
 | `enrich-lead` | Takes email, returns enriched data |
 | `add-to-hubspot` | Takes contact data, creates/updates CRM |
-| `send-slack-alert` | Sends formatted Slack message |
+| `send-telegram-alert` | Sends formatted Telegram message |
 | `log-event` | Writes audit record to database |
 
 A `stripe-new-customer` workflow orchestrates:
@@ -300,22 +301,22 @@ Parent checks: IF $json.success === false → handle error
 
 ---
 
-### Q5. You have the same "send Slack alert" logic copied in 8 different workflows. What is the correct refactor and what are the exact steps?
+### Q5. You have the same "send Telegram alert" logic copied in 8 different workflows. What is the correct refactor and what are the exact steps?
 
 **Answer:**
 1. Create a new workflow named `send-slack-alert`
 2. Add `When Called By Another Workflow` as the trigger
-3. Move the Slack logic into it — expect `{ channel, title, message, severity }` as input
+3. Move the Telegram logic into it — expect `{ chatId, title, message, severity }` as input
 4. End with a Set node returning `{ sent: true, timestamp: $now.toISO() }`
-5. In each of the 8 workflows, replace the Slack node with `Execute Workflow → send-slack-alert`
+5. In each of the 8 workflows, replace the Telegram node with `Execute Workflow → send-telegram-alert`
 6. Pass the required fields in the Execute Workflow node's input mapping
 
-Now all 8 workflows use one implementation. Change the Slack format once → all 8 updated. This is the DRY principle applied to automation architecture.
+Now all 8 workflows use one implementation. Change the Telegram format once → all 8 updated. This is the DRY principle applied to automation architecture.
 
 ---
 
 ## Next Lesson
 
 **[Lesson 14 →](14-real-project-slack-bot.md)** — Build a complete production
-Slack alert bot: monitors an API endpoint every 5 minutes, detects anomalies,
+Telegram alert bot: monitors an API endpoint every 5 minutes, detects anomalies,
 sends formatted alerts with context, and uses all the patterns from lessons 1–13.
