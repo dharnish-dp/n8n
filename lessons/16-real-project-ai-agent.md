@@ -288,7 +288,6 @@ return {
   toolName
 };
 ```
-```
 
 Use `Respond to Webhook` to send the final JSON back to the caller.
 
@@ -378,6 +377,71 @@ Expected behavior:
 - If memory loads too slowly, reduce the number of rows or store a lighter representation
 - If the agent repeats itself, ensure you append both user and assistant turns in order
 - If the webhook fails, inspect the raw payload in the n8n execution log
+
+---
+
+## What You've Applied
+
+| Concept | Where |
+|---------|-------|
+| Webhook trigger | Entry point for all chat messages |
+| Respond to Webhook | Return reply to the caller |
+| Code node | Normalize input, build prompt, parse AI response |
+| OpenAI Chat node | Send message history to GPT-4 |
+| IF node | Branch on tool call vs. direct answer |
+| Execute Workflow | Dispatch to tool sub-workflows |
+| Sub-workflow trigger | Receive tool inputs from the main agent |
+| Airtable / Postgres | Persist conversation memory |
+| Context window management | Limit + summarize history to stay under token budget |
+| System prompt engineering | Define agent behavior and tool contract |
+
+---
+
+## Check Your Understanding — Q&A
+
+### Q1. The AI sometimes returns plain text instead of a JSON tool block when it should call a tool. What causes this and how do you fix it?
+
+**Answer:** GPT models follow natural language instructions probabilistically — a vague system prompt like "use a tool if needed" leaves room for free-text improvisation. Fix it at three levels: (1) **Prompt constraint** — tell the model exactly when to return a tool block and show a concrete example: `When you need to call a tool, respond ONLY with a JSON code block: \`\`\`json\n{"tool": "lookup-kb", "input": {"query": "..."}}\n\`\`\``. (2) **Few-shot examples** — include one user/assistant pair in the prompt that demonstrates a tool call. (3) **Validation fallback** — in your parse Code node, if `toolCall` is null but the message mentions a tool name, flag it and re-prompt or treat it as a direct answer rather than a silent failure. Models follow tight examples more reliably than abstract rules.
+
+---
+
+### Q2. Two users send messages at the same time. Both requests load memory, build a prompt, and try to write the response to memory simultaneously. What goes wrong and how do you prevent it?
+
+**Answer:** The race is in the **read-modify-write** cycle: both executions read the same last 10 messages, build independent prompts, then both try to append to the memory store. If they finish writing at the same time, one write may overwrite the other, or both messages may land without ordering, breaking the conversation sequence for the next request. Fix: use a database (Postgres) with an `INSERT` that includes a `created_at` timestamp — the DB serializes writes and the next query just sorts by that column. With Airtable you cannot enforce this atomically, so either (a) accept the race for low-volume use and sort by `createdAt` on every read, or (b) switch to a DB and use a unique `(sessionId, createdAt)` index. The session-scoped writes means different `sessionId` values never conflict — this race only happens within the same active session.
+
+---
+
+### Q3. After 30 conversation turns the OpenAI request starts throwing `context_length_exceeded` errors. Walk through the full context management strategy.
+
+**Answer:** The cause is that your raw message history exceeds the model's token limit (8k for GPT-4, 128k for GPT-4 Turbo). The fix is layered: (1) **Hard limit** — only load the most recent N turns from memory (start with 10). This is the cheapest fix and handles most cases. (2) **Token counting** — instead of a fixed turn count, estimate token usage before calling OpenAI (`(role + content length) / 4 ≈ tokens`). If the estimate exceeds 6000 tokens, trim further. (3) **Summarization** — when history is trimmed, add a summary step: call OpenAI separately to compress older turns into a single `{"role": "system", "content": "Prior context summary: ..."}` message. Store the summary back; next requests include the summary instead of raw old turns. (4) **Metadata injection** — keep a separate record of stable facts (user name, plan, product) and inject them as a single system message rather than keeping them in the conversational history. This keeps the history window purely for recent back-and-forth.
+
+---
+
+### Q4. Why build tool logic (lookup-kb, create-ticket) as separate sub-workflows instead of inline Code nodes in the main agent workflow?
+
+**Answer:** Three reasons matter at engineering scale: (1) **Independent testability** — you can trigger `lookup-kb` directly with test data without running the full agent, making the KB search logic easy to iterate. (2) **Reuse** — other workflows (a Telegram bot, a support dashboard) can call the same `lookup-kb` sub-workflow without duplicating the search logic. (3) **Failure isolation** — if `create-ticket` throws a 500 from Zendesk, only the tool sub-workflow fails. The agent can catch that error from `Execute Workflow`, log it, and reply "I couldn't create the ticket right now" rather than the entire agent execution dying. Inline Code nodes mix concerns — the agent becomes monolithic, hard to test, and fragile when any one tool changes.
+
+---
+
+### Q5. Your agent works but always responds in a flat tone regardless of what users ask. You want it to adapt its tone based on the incoming source (web, mobile, internal). How do you implement this?
+
+**Answer:** Parameterize the system prompt using the `source` field you already extract in Step 2. In the prompt-building Code node:
+
+```javascript
+const toneMap = {
+  web:      'Be helpful and professional. Use clear, concise language.',
+  mobile:   'Be brief. Responses should be 1-2 sentences maximum.',
+  internal: 'Be technical and precise. Include relevant field names and IDs.'
+};
+
+const tone = toneMap[$json.source] || toneMap.web;
+
+const systemPrompt = `You are a customer support assistant. ${tone}
+You have access to two tools: lookup-kb and create-ticket.
+...`;
+```
+
+This keeps tone-specific instructions out of the main prompt body, making them easy to update, and uses the source value you already have — no extra node or API call needed. The same pattern applies to language: add a `lang` field from the request and inject `Respond in ${lang}.` into the system prompt.
 
 ---
 

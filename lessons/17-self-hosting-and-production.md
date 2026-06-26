@@ -53,15 +53,84 @@ If you already run MySQL, n8n supports it. Postgres is typically simpler for mod
 
 Create a `docker-compose.yml` for n8n + Postgres + Redis + proxy.
 
-### Minimal production compose structure
+```yaml
+version: '3.8'
 
-- `n8n`: the workflow engine
-- `db`: PostgreSQL for data persistence
-- `redis`: queue backend for workers
-- `worker`: optional background worker service
-- `proxy`: nginx or Caddy for HTTPS / host routing
+volumes:
+  db_data:
+  n8n_data:
 
-This gives a clean separation of responsibilities.
+networks:
+  n8n_net:
+
+services:
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: n8n
+      POSTGRES_USER: n8n
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks:
+      - n8n_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U n8n"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks:
+      - n8n_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    env_file: .env
+    environment:
+      - EXECUTIONS_PROCESS=main
+    volumes:
+      - n8n_data:/home/node/.n8n
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - n8n_net
+
+  worker:
+    image: docker.n8n.io/n8nio/n8n:latest
+    restart: unless-stopped
+    command: worker
+    env_file: .env
+    environment:
+      - EXECUTIONS_PROCESS=worker
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - n8n_net
+```
+
+Key design decisions:
+- `db` and `redis` use `healthcheck` so n8n waits for them to be ready before starting
+- `n8n_data` volume persists encryption key state and config between restarts
+- `worker` runs as a separate service so the main n8n process stays responsive
+- Both `n8n` and `worker` share the same `.env` file
 
 ---
 
@@ -297,6 +366,55 @@ Use this checklist before declaring your deployment production-ready:
 - `Webhook registration failed` → confirm `WEBHOOK_TUNNEL_URL` and `N8N_PROTOCOL` are correct
 - `Worker not processing jobs` → check Redis connection and `EXECUTIONS_PROCESS=worker`
 - `504 or 502 from proxy` → verify proxy forwards to n8n and the app is healthy
+
+---
+
+## What You've Applied
+
+| Concept | Where |
+|---------|-------|
+| PostgreSQL persistence | Replace SQLite for durability |
+| Docker Compose | Multi-service orchestration |
+| Environment variables | Secure, portable configuration |
+| N8N_ENCRYPTION_KEY | Protect credentials at rest |
+| Reverse proxy (nginx / Caddy) | TLS termination + stable hostname |
+| WEBHOOK_TUNNEL_URL | Publicly reachable webhook URLs |
+| Queue mode + Redis | Async, scalable execution |
+| pg_dump backups | Disaster recovery for workflows and credentials |
+| TRUST_PROXY | Correct scheme detection behind a proxy |
+| Health checks | Ensure dependent services are ready before n8n starts |
+
+---
+
+## Check Your Understanding — Q&A
+
+### Q1. You restart your n8n container with a different `N8N_ENCRYPTION_KEY` by mistake. What happens and how do you recover?
+
+**Answer:** All existing credentials in the database are now unreadable — n8n uses the key to AES-encrypt credential values at rest. When it tries to decrypt them with the new key, it gets garbage output or throws a decryption error. Workflows that use those credentials will fail immediately. Recovery: stop the container, restore `N8N_ENCRYPTION_KEY` to the original value, restart. This is why you store the key in a secret manager (Vault, AWS SSM, 1Password CLI) and never change it once set. If the original key is genuinely lost and no backup exists, you must delete and re-enter all credentials manually — there is no other option.
+
+---
+
+### Q2. Your n8n is behind nginx and webhooks work on HTTP locally, but external callers get SSL errors. What do you check first?
+
+**Answer:** Three things in order: (1) `N8N_PROTOCOL` must be `https` — if it's `http`, n8n builds webhook URLs with `http://` even though nginx is serving TLS. (2) `WEBHOOK_TUNNEL_URL` must be the public HTTPS URL — this is what n8n advertises to the caller. (3) `TRUST_PROXY=true` must be set — without it n8n ignores the `X-Forwarded-Proto: https` header from nginx and thinks it's running unencrypted. All three must be correct together. Checking just one and restarting wastes time — fix the full set, then test.
+
+---
+
+### Q3. You're running n8n in main mode (no worker). A long-running workflow takes 5 minutes and 200 webhook requests arrive during that time. What happens?
+
+**Answer:** In main mode, executions run in the same Node.js process as the web server. Long-running executions consume the event loop, delaying or dropping webhook responses. The 200 webhooks either queue in memory (limited), timeout waiting for a response, or get rejected outright. The fix is **queue mode**: the main process receives webhooks and queues them to Redis immediately, responding quickly to callers. One or more worker processes pick jobs from the queue and run them concurrently, independently of the web server. Main mode is only safe for low-volume, short-duration workflows.
+
+---
+
+### Q4. How do you safely upgrade n8n to a new version in production without losing workflows or credentials?
+
+**Answer:** Follow this sequence: (1) take a `pg_dump` of the database — this is your rollback point. (2) Pull the new n8n image but do NOT restart yet. (3) Review the n8n changelog for breaking changes or migration notes. (4) Stop the current n8n and worker containers. (5) Bring up the new version — n8n runs its own database migrations on startup. (6) Test a few key workflows manually. If something is broken: restore the `pg_dump` to the DB, pull the previous image, restart. Because credentials are in the database (encrypted with your unchanged key), they survive the upgrade automatically — no re-entry needed.
+
+---
+
+### Q5. Your monitoring shows n8n is responding slowly. You suspect the Postgres executions table has grown to millions of rows. How do you diagnose and fix this without downtime?
+
+**Answer:** Diagnose: connect to Postgres and run `SELECT COUNT(*) FROM execution_entity;`. Millions of rows slow every execution status query because n8n reads recent history on every run. Fix: configure pruning via env vars — `EXECUTIONS_DATA_PRUNE=true` tells n8n to automatically delete execution records older than `EXECUTIONS_DATA_MAX_AGE` hours (default 336 = 2 weeks) and `EXECUTIONS_DATA_PRUNE_MAX_COUNT` sets a row cap. Enable this in the running container without downtime — n8n applies pruning on each execution cycle, gradually trimming the table. For immediate relief, manually delete old rows in off-peak hours with `DELETE FROM execution_entity WHERE started_at < NOW() - INTERVAL '30 days';`, then `VACUUM ANALYZE execution_entity;` to reclaim space.
 
 ---
 

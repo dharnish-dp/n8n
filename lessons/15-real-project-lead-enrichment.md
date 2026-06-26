@@ -335,43 +335,31 @@ return { ...$json, fromCache: false };
 
 ### Q1. Why do you check for duplicates BEFORE enriching rather than after?
 
-**Answer:** Enrichment costs API quota (Hunter.io gives 25 free/month). If you
-enrich first and then detect a duplicate, you've burned the API call
-unnecessarily. Always gate on idempotency before any expensive or
-irreversible operation. The order is: validate → deduplicate → enrich → store.
+**Answer:** Enrichment costs API quota — Hunter.io's free tier gives only 25 requests/month. If you enrich first and then detect a duplicate, you've permanently burned the API call for data you'll immediately discard. The same principle applies to any irreversible or quota-limited operation: always gate on idempotency before you commit resources. The correct order is always validate → deduplicate → enrich → store. This also applies to side effects like sending emails or writing to a CRM — once sent, you can't unsend. Dedup-first prevents double-notifications and double-records, not just wasted API calls. The general rule: order operations from cheapest/most-reversible to most-expensive/least-reversible.
 
 ---
 
 ### Q2. The Hunter.io API returns a 404 for an unknown domain. With Continue On Fail OFF, what happens? With it ON?
 
-**Answer:** OFF — the workflow stops at the HTTP Request node. The lead is
-not stored, the caller gets no response (timeout), and the execution is marked
-as failed. ON — the node outputs `{ error: "...", statusCode: 404 }`. The
-downstream Set node handles missing data gracefully with `?.` and `??`
-defaults. The lead is stored with `enriched: false`, `company: "Unknown"`.
-This is the correct behaviour — a lead with no enrichment is still a lead.
+**Answer:** With Continue On Fail **OFF** — the workflow halts at the HTTP Request node. The execution is marked failed, the lead is never written to Sheets, and the caller's webhook receives no response (their request eventually times out). Any team notification is lost. With it **ON** — the node passes forward a synthetic error item: `{ error: "Not Found", statusCode: 404 }`. The downstream Set node handles the missing `data` field gracefully using `?.` and `??` defaults — `company` becomes `"Unknown"`, `enriched` becomes `false`, `confidence` becomes `0`. The lead is stored and the Telegram notification fires, making clear that enrichment failed without stopping the pipeline. The core insight: enrichment is a *nice-to-have* that should never block lead capture. Continue On Fail is the correct tool whenever a node is optional in the success path.
 
 ---
 
 ### Q3. Your webhook receives 50 simultaneous signups from a campaign. How does n8n handle this and what could go wrong?
 
-**Answer:** n8n processes each webhook invocation as a separate execution.
-In main mode, executions run concurrently (up to the thread limit). The
-idempotency check becomes a race condition — two executions for the same
-email could both read "not found" before either writes to Sheets. Fix: use
-a database with a unique constraint on email (Postgres `INSERT ... ON CONFLICT
-DO NOTHING`) instead of Sheets for the dedup check — the DB enforces
-uniqueness atomically.
+**Answer:** n8n processes each webhook invocation as a separate execution running concurrently (in main mode, up to the available Node.js thread capacity). The problem is the idempotency check: it is a **read-modify-write** operation with no locking. Two executions for `alice@acme.com` can both read the Sheets column, both find "not found", both proceed to enrich, both write a row — resulting in a duplicate record despite the dedup logic. This is a classic TOCTOU (time-of-check/time-of-use) race. The fix is to replace the Sheets-based dedup with a **Postgres `INSERT ... ON CONFLICT DO NOTHING`** on a column with a unique index on `email`. The database enforces uniqueness atomically — the second insert is silently rejected at the DB level, so only one execution proceeds. Google Sheets has no atomic operations, making it unsafe as a dedup store under concurrent load. At truly high volumes, also enable n8n queue mode so executions are serialized through Redis workers rather than running all at once.
 
 ---
 
 ### Q4. How do you test the idempotency logic without sending real webhooks?
 
-**Answer:** Pin data on the Webhook node after capturing one real event.
-Then modify the pinned data to set `isDuplicate: true` in the downstream
-Code node's context, or temporarily hardcode the email to one already in
-your Sheets. Better: create a Manual Trigger version of the workflow for
-testing, with hardcoded test data — no live webhook needed.
+**Answer:** Three approaches in increasing rigour: (1) **Pin data on the Webhook node** — after capturing one real test event, click the pin icon. The workflow now uses that captured payload on every manual run without needing a live HTTP call. Modify the pinned email to one that already exists in your Sheets to simulate a duplicate. (2) **Hardcode in the Code node** — temporarily override `isDuplicate: true` directly in the validation Code node to force the duplicate branch regardless of Sheets content. This tests the IF routing and Respond-to-Webhook path in isolation. (3) **Manual Trigger variant** — create a copy of the workflow with a Manual Trigger and hardcoded test items instead of a real Webhook. This version is safe to run any time, never needs an HTTP client, and can be committed as a self-contained test fixture. Avoid relying only on live `curl` calls — they depend on network, real credentials, and Sheets state, making tests fragile and hard to repeat.
+
+---
+
+### Q5. The Google Sheets append works in testing but fails in production with a `429 Too Many Requests` error during a campaign spike. What is the root cause and how do you fix it?
+
+**Answer:** The Google Sheets API enforces per-project write quotas (default: 60 writes/minute per project, 300 requests/minute per user). During a campaign spike with 50 simultaneous signups, each execution hits the Sheets API at the same time, collectively exceeding the quota. The `429` causes those executions to fail and leads to be dropped. The fix has two parts: (1) **Short term** — add a `Wait` node (1-2 seconds) before the Sheets append to spread writes over time, and enable **Continue On Fail** on the Sheets node with a retry Code node that backs off and retries up to 3 times. (2) **Proper fix** — buffer incoming leads into a Postgres table first (a single fast insert, no quota), then process them in batches via a scheduled workflow that appends to Sheets at a controlled rate (e.g. `SplitInBatches` of 10 with a 1-second wait between batches). The webhook returns `200 OK` immediately after the DB insert — the caller is never blocked by downstream quota issues. This is the **ingest/process separation** pattern: accept fast, process slowly, never let a downstream rate limit become a user-facing failure.
 
 ---
 
